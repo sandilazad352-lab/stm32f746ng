@@ -135,6 +135,7 @@ static err_t http_accept_callback(void *arg, struct tcp_pcb *newpcb, err_t err);
 static err_t http_recv_callback(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, err_t err);
 static void uart_log(const char *msg);
 static int swv_send_char(uint8_t ch);
+static void mco1_enable(void);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -179,6 +180,23 @@ int __io_getchar(void)
 static void uart_log(const char *msg)
 {
   HAL_UART_Transmit(&huart1, (uint8_t *)msg, strlen(msg), HAL_MAX_DELAY);
+}
+
+static void mco1_enable(void)
+{
+  GPIO_InitTypeDef GPIO_InitStruct = {0};
+
+  __HAL_RCC_GPIOA_CLK_ENABLE();
+
+  GPIO_InitStruct.Pin = GPIO_PIN_8;
+  GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
+  GPIO_InitStruct.Alternate = GPIO_AF0_MCO;
+  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
+  /* MCO1 on PA8: HSE (25 MHz) / 5 = 5 MHz output */
+  HAL_RCC_MCOConfig(RCC_MCO1, RCC_MCO1SOURCE_HSE, RCC_MCODIV_5);
 }
 
 /* HTTP Server receive callback */
@@ -312,6 +330,8 @@ int main(void)
   MX_USART6_UART_Init();
   MX_FATFS_Init();
   /* USER CODE BEGIN 2 */
+  mco1_enable();
+  printf("MCO1 enabled on PA8 (HSE/5)\r\n");
 
   /* USER CODE END 2 */
 
