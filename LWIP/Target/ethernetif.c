@@ -132,7 +132,6 @@ ETH_TxPacketConfig TxConfig;
 
 /* Private function prototypes -----------------------------------------------*/
 static void ethernetif_input(void const * argument);
-static void RMII_Thread( void const * argument );
 int32_t ETH_PHY_IO_Init(void);
 int32_t ETH_PHY_IO_DeInit (void);
 int32_t ETH_PHY_IO_ReadReg(uint32_t DevAddr, uint32_t RegAddr, uint32_t *pRegVal);
@@ -354,14 +353,7 @@ static void low_level_init(struct netif *netif)
 
 /* USER CODE END LOW_LEVEL_INIT */
 
-  if(HAL_GetREVID() == 0x1000)
-  {
-    /*
-      This thread will keep resetting the RMII interface until good frames are received
-    */
-    osThreadDef(RMII_Watchdog, RMII_Thread, osPriorityRealtime, 0, configMINIMAL_STACK_SIZE);
-    osThreadCreate (osThread(RMII_Watchdog), NULL);
-  }
+  /* RMII watchdog disabled: it can trigger link instability on direct laptop links. */
 }
 
 /**
@@ -791,6 +783,8 @@ void ethernet_link_thread(void const * argument)
   ETH_MACConfigTypeDef MACConf = {0};
   int32_t PHYLinkState = 0;
   uint32_t linkchanged = 0U, speed = 0U, duplex = 0U;
+  uint8_t up_confirm = 0U;
+  uint8_t down_confirm = 0U;
 
   struct netif *netif = (struct netif *) argument;
 /* USER CODE BEGIN ETH link init */
@@ -800,14 +794,28 @@ void ethernet_link_thread(void const * argument)
   for(;;)
   {
   PHYLinkState = LAN8742_GetLinkState(&LAN8742);
+  linkchanged = 0U;
 
-  if(netif_is_link_up(netif) && (PHYLinkState <= LAN8742_STATUS_LINK_DOWN))
+  if(PHYLinkState <= LAN8742_STATUS_LINK_DOWN)
+  {
+    down_confirm++;
+    up_confirm = 0U;
+  }
+  else
+  {
+    up_confirm++;
+    down_confirm = 0U;
+  }
+
+  /* Debounce transient PHY state changes to avoid link flapping. */
+  if(netif_is_link_up(netif) && (down_confirm >= 3U))
   {
     HAL_ETH_Stop_IT(&heth);
     netif_set_down(netif);
     netif_set_link_down(netif);
+    down_confirm = 0U;
   }
-  else if(!netif_is_link_up(netif) && (PHYLinkState > LAN8742_STATUS_LINK_DOWN))
+  else if(!netif_is_link_up(netif) && (up_confirm >= 3U))
   {
     switch (PHYLinkState)
     {
@@ -845,6 +853,7 @@ void ethernet_link_thread(void const * argument)
       HAL_ETH_Start_IT(&heth);
       netif_set_up(netif);
       netif_set_link_up(netif);
+      up_confirm = 0U;
     }
   }
 
@@ -931,30 +940,3 @@ void HAL_ETH_TxFreeCallback(uint32_t * buff)
 
 /* USER CODE END 8 */
 
-void RMII_Thread( void const * argument )
-{
-  (void) argument;
-
-  for(;;)
-  {
-    /* some unicast good packets are received */
-    if(heth.Instance->MMCRGUFCR > 0U)
-    {
-      /* RMII Init is OK: Delete the Thread */
-      osThreadTerminate(NULL);
-    }
-    else if(heth.Instance->MMCRFCECR > 10U)
-    {
-      /* ETH received too many packets with CRC errors, resetting RMII */
-      SYSCFG->PMC &= ~SYSCFG_PMC_MII_RMII_SEL;
-      SYSCFG->PMC |= SYSCFG_PMC_MII_RMII_SEL;
-
-      heth.Instance->MMCCR |= ETH_MMCCR_CR;
-    }
-    else
-    {
-      /* Delay 200 ms */
-      osDelay(200);
-    }
-  }
-}
