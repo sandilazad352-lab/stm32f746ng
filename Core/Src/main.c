@@ -26,6 +26,11 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "lwip/tcp.h"
+#include "lwip/ip_addr.h"
+#include <string.h>
+#include <stdio.h>
+
+extern struct netif gnetif;
 
 /* HTTP Server HTML response */
 static const char http_response[] = 
@@ -128,28 +133,58 @@ void StartDefaultTask(void const * argument);
 static void http_server_init(void);
 static err_t http_accept_callback(void *arg, struct tcp_pcb *newpcb, err_t err);
 static err_t http_recv_callback(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, err_t err);
+static void uart_log(const char *msg);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 
+static void uart_log(const char *msg)
+{
+  HAL_UART_Transmit(&huart1, (uint8_t *)msg, strlen(msg), HAL_MAX_DELAY);
+}
+
 /* HTTP Server receive callback */
 static err_t http_recv_callback(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, err_t err)
 {
+  if (err != ERR_OK)
+  {
+    if (p != NULL)
+    {
+      pbuf_free(p);
+    }
+    tcp_abort(tpcb);
+    return err;
+  }
+
   if (p != NULL)
   {
+    tcp_recved(tpcb, p->tot_len);
+
     /* Send HTTP response */
     tcp_write(tpcb, (const void*)http_response, sizeof(http_response)-1, TCP_WRITE_FLAG_COPY);
     tcp_output(tpcb);
-    
+
     /* Free the buffer */
     pbuf_free(p);
+
+    /* Close right after serving one request */
+    tcp_recv(tpcb, NULL);
+    if (tcp_close(tpcb) != ERR_OK)
+    {
+      tcp_abort(tpcb);
+    }
   }
-  else if (err == ERR_OK)
+  else
   {
     /* Close connection */
-    tcp_close(tpcb);
+    tcp_recv(tpcb, NULL);
+    if (tcp_close(tpcb) != ERR_OK)
+    {
+      tcp_abort(tpcb);
+    }
   }
+
   return ERR_OK;
 }
 
@@ -1634,6 +1669,8 @@ static void MX_GPIO_Init(void)
 /* USER CODE END Header_StartDefaultTask */
 void StartDefaultTask(void const * argument)
 {
+  uint8_t http_started = 0;
+
   /* init code for USB_HOST */
   MX_USB_HOST_Init();
 
@@ -1645,19 +1682,58 @@ void StartDefaultTask(void const * argument)
   uint8_t msg[] = "helloworld\r\n";
   HAL_UART_Transmit(&huart1, msg, sizeof(msg)-1, HAL_MAX_DELAY);
 
-  /* Wait for network to be ready */
-  osDelay(1000);
-  
-  /* Initialize HTTP server */
-  http_server_init();
-  
-  /* Send network ready message */
-  uint8_t msg2[] = "HTTP Server at http://192.168.1.100\r\n";
-  HAL_UART_Transmit(&huart1, msg2, sizeof(msg2)-1, HAL_MAX_DELAY);
+  uart_log("Waiting Ethernet link...\r\n");
+
+  for (uint32_t i = 0; i < 100; i++)
+  {
+    if (netif_is_link_up(&gnetif) && netif_is_up(&gnetif))
+    {
+      break;
+    }
+    osDelay(100);
+  }
+
+  if (netif_is_link_up(&gnetif) && netif_is_up(&gnetif))
+  {
+    char ipmsg[96];
+    const char *ip = ipaddr_ntoa(&gnetif.ip_addr);
+
+    if (ip == NULL)
+    {
+      ip = "unknown";
+    }
+
+    /* Initialize HTTP server after link up */
+    http_server_init();
+    http_started = 1;
+
+    snprintf(ipmsg, sizeof(ipmsg), "Link UP, HTTP: http://%s\r\n", ip);
+    uart_log(ipmsg);
+  }
+  else
+  {
+    uart_log("Link DOWN: check cable/PHY/router\r\n");
+  }
 
   /* Infinite loop */
   for(;;)
   {
+    if (!http_started && netif_is_link_up(&gnetif) && netif_is_up(&gnetif))
+    {
+      char ipmsg[96];
+      const char *ip = ipaddr_ntoa(&gnetif.ip_addr);
+
+      if (ip == NULL)
+      {
+        ip = "unknown";
+      }
+
+      http_server_init();
+      http_started = 1;
+      snprintf(ipmsg, sizeof(ipmsg), "Link UP later, HTTP: http://%s\r\n", ip);
+      uart_log(ipmsg);
+    }
+
     osDelay(1);
   }
   /* USER CODE END 5 */

@@ -68,8 +68,7 @@ void MX_LWIP_Init(void)
   /* Registers the default network interface */
   netif_set_default(&gnetif);
 
-  /* We must always bring the network interface up connection or not... */
-  netif_set_up(&gnetif);
+  /* Link thread will set interface up when PHY link is detected */
 
   /* Set the link callback function, this function is called on change of link status*/
   netif_set_link_callback(&gnetif, ethernet_link_status_updated);
