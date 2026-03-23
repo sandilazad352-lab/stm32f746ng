@@ -139,6 +139,20 @@ static void uart_log(const char *msg);
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 
+int __io_putchar(int ch)
+{
+  uint8_t c = (uint8_t)ch;
+  HAL_UART_Transmit(&huart1, &c, 1, HAL_MAX_DELAY);
+  return ch;
+}
+
+int __io_getchar(void)
+{
+  uint8_t c;
+  HAL_UART_Receive(&huart1, &c, 1, HAL_MAX_DELAY);
+  return c;
+}
+
 static void uart_log(const char *msg)
 {
   HAL_UART_Transmit(&huart1, (uint8_t *)msg, strlen(msg), HAL_MAX_DELAY);
@@ -1678,9 +1692,8 @@ void StartDefaultTask(void const * argument)
   MX_LWIP_Init();
   /* USER CODE BEGIN 5 */
 
-  /* Print helloworld on UART1 */
-  uint8_t msg[] = "helloworld\r\n";
-  HAL_UART_Transmit(&huart1, msg, sizeof(msg)-1, HAL_MAX_DELAY);
+  printf("helloworld\r\n");
+  printf("STM32 VCP debug active on USART1 @ 115200\r\n");
 
   uart_log("Waiting Ethernet link...\r\n");
 
