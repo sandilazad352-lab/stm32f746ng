@@ -1,0 +1,29 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Debug STM32 + SWV printf",
+      "type": "cortex-debug",
+      "request": "launch",
+      "cwd": "${workspaceFolder}",
+      "executable": "${workspaceFolder}/build/Debug/ethernet_test.elf",
+      "servertype": "stlink",
+      "device": "STM32F746NGHx",
+      "interface": "swd",
+      "runToEntryPoint": "main",
+      "swoConfig": {
+        "enabled": true,
+        "cpuFrequency": 200000000,
+        "swoFrequency": 2000000,
+        "source": "probe",
+        "decoders": [
+          {
+            "port": 0,
+            "type": "console",
+            "label": "SWV printf"
+          }
+        ]
+      }
+    }
+  ]
+}

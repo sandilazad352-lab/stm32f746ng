@@ -134,15 +134,38 @@ static void http_server_init(void);
 static err_t http_accept_callback(void *arg, struct tcp_pcb *newpcb, err_t err);
 static err_t http_recv_callback(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, err_t err);
 static void uart_log(const char *msg);
+static int swv_send_char(uint8_t ch);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 
+static int swv_send_char(uint8_t ch)
+{
+  if (((CoreDebug->DEMCR & CoreDebug_DEMCR_TRCENA_Msk) == 0U) ||
+      ((ITM->TCR & ITM_TCR_ITMENA_Msk) == 0U) ||
+      ((ITM->TER & 1UL) == 0U))
+  {
+    return 0;
+  }
+
+  while (ITM->PORT[0U].u32 == 0U)
+  {
+  }
+  ITM->PORT[0U].u8 = ch;
+  return 1;
+}
+
 int __io_putchar(int ch)
 {
   uint8_t c = (uint8_t)ch;
-  HAL_UART_Transmit(&huart1, &c, 1, HAL_MAX_DELAY);
+
+  /* Prefer SWV when debugger/ITM is enabled, fall back to VCP UART otherwise. */
+  if (swv_send_char(c) == 0)
+  {
+    HAL_UART_Transmit(&huart1, &c, 1, HAL_MAX_DELAY);
+  }
+
   return ch;
 }
 
